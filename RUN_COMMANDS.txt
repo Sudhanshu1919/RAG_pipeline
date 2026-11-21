@@ -1,0 +1,209 @@
+CGPRR FACT-CHECK: COMMANDS TO RUN IT
+=====================================
+
+Platform : Windows PowerShell
+Folder   : run every command from the project folder (the one with pyproject.toml)
+           d:\Wehold\CGPRR\cgprr-factcheck\cgprr-factcheck
+Model    : qwen3:4b-instruct-2507-q4_K_M, served locally by Ollama
+
+
+-------------------------------------------------------------------
+PART A. ONE-TIME SETUP (skip this if .venv already exists)
+-------------------------------------------------------------------
+
+1. Create the virtual environment and install the tool
+   py -3.13 -m venv .venv
+   .venv\Scripts\Activate.ps1
+   pip install -e ".[dev]"
+
+   If activation is blocked, run this once and try again:
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+2. Download the local model (about 2.5 GB, one time)
+   ollama pull qwen3:4b-instruct-2507-q4_K_M
+
+3. Run the tests (no model needed; all should pass)
+   pytest -q
+
+
+-------------------------------------------------------------------
+PART B. EVERY NEW TERMINAL (run these first, every time)
+-------------------------------------------------------------------
+
+1. Go to the project folder
+   cd d:\Wehold\CGPRR\cgprr-factcheck\cgprr-factcheck
+
+2. Make sure special characters display correctly
+   [Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+3. Activate the environment
+   .venv\Scripts\Activate.ps1
+
+4. Load the "lite" settings profile (fewest model calls)
+   Get-Content profiles\lite.env | Where-Object { $_ -match '^[A-Z_]+=.+' } | ForEach-Object { $k, $v = $_ -split '=', 2; Set-Item "env:$k" $v }
+
+5. Check the model server is reachable (must show "reachable": true)
+   cgprr health
+
+   If it shows false: start the Ollama app (or run: ollama serve)
+
+6. Optional: load the model ahead of time so the first answer is faster
+   ollama run qwen3:4b-instruct-2507-q4_K_M "hi"
+
+
+-------------------------------------------------------------------
+PART C. RUN IT ON THE SAMPLE DATA (collection: cgprr-news)
+-------------------------------------------------------------------
+
+1. Build the search index (10 sample documents; a few seconds)
+   cgprr -c cgprr-news collection build
+
+2. Ask a question the documents can answer (cited answer)
+   cgprr -c cgprr-news ask "How many TEU did the Port of Velmora handle in FY2025?"
+
+3. Ask a question the documents cannot answer
+   (expected reply: Not in the sources.)
+   cgprr -c cgprr-news ask "What is the GDP growth forecast for Zandoria in 2027?"
+
+4. Look up the answer with no model at all (returns source sentences; instant)
+   cgprr -c cgprr-news ask --no-llm "How many TEU did the Port of Velmora handle?"
+
+5. Fact-check a sample article (report is written to out\cgprr-news\)
+   cgprr -c cgprr-news factcheck --article A01
+
+6. Open the fact-check report in the browser
+   start out\cgprr-news\factcheck_A01.html
+
+7. Fact-check every sample article
+   cgprr -c cgprr-news factcheck --all
+
+8. Score the system with no model calls
+   python scripts\eval_nollm.py cgprr-news
+
+9. Full scored evaluation (one model call per test item; slow on a 4 GB GPU)
+   Result: out\cgprr-news\eval_all.md
+   cgprr -c cgprr-news eval all
+
+
+-------------------------------------------------------------------
+PART D. ADD YOUR OWN DOCUMENTS AND RUN IT
+-------------------------------------------------------------------
+
+Accepted : PDF with selectable text, Word .docx, .md, .txt, .html
+           (up to 50 MB and 500 pages per file)
+Refused  : scanned PDFs (run OCR first), encrypted PDFs, .doc/.docm,
+           files with macros, executables, zip files
+Names    : collection names use lowercase letters, digits, - or _ only
+
+The sample collection cgprr-news is read-only. Put your own documents in a new collection.
+In the commands below, replace "my-docs" with your collection name and the paths with your own.
+
+1. Create a collection from a folder (files are COPIED; your originals stay untouched)
+   cgprr collection create my-docs "C:\Users\sudha\Documents\Reports" --description "My reports 2025"
+
+   You can also list individual files:
+   cgprr collection create my-docs "C:\path\one.pdf" "C:\path\two.docx"
+
+   Each file is listed as "added" or "refused" with the reason.
+
+2. Build the index for the new collection
+   cgprr -c my-docs collection build
+
+3. See what was redacted, rejected or quarantined, and why
+   cgprr -c my-docs collection review
+
+   Emails, phone numbers, card and Aadhaar numbers become [REDACTED:...].
+   Text that tries to instruct the AI ("ignore previous instructions") is quarantined.
+   If a quarantined chunk is safe, release it by the hash shown in the review, then rebuild:
+   cgprr -c my-docs collection review --release <HASH>
+   cgprr -c my-docs collection build
+
+4. Ask questions
+   cgprr -c my-docs ask "What sentence did the court hand down in the Rao case?"
+   cgprr -c my-docs ask --no-llm "What sentence did the court hand down in the Rao case?"
+
+5. Fact-check an article file against your documents (md/txt/pdf/docx/html)
+   Report is written to out\my-docs\
+   cgprr -c my-docs factcheck --file "C:\Users\sudha\Downloads\article.docx"
+
+6. Search several collections at once (comma-separated, no spaces)
+   cgprr -c my-docs,cgprr-news ask "your question here"
+
+
+-------------------------------------------------------------------
+PART E. LATER CHANGES TO A COLLECTION
+-------------------------------------------------------------------
+
+Always run "collection build" again after any change.
+
+Add more files
+   cgprr -c my-docs collection add "C:\Users\sudha\Downloads\new-report.pdf"
+   cgprr -c my-docs collection build
+
+See every file and its state (new / changed / indexed / excluded / rejected)
+   cgprr -c my-docs collection files
+
+Stop indexing a file without deleting it, then index it again later
+(paths are relative to the collection folder)
+   cgprr -c my-docs collection exclude docs/draft.pdf
+   cgprr -c my-docs collection include docs/draft.pdf
+   cgprr -c my-docs collection build
+
+Remove a file: delete it from data\collections\my-docs\docs\ and rebuild
+   cgprr -c my-docs collection build
+
+List all collections / show details of one
+   cgprr collection list
+   cgprr -c my-docs collection info
+
+Remove a whole collection
+   Remove-Item -Recurse -Force data\collections\my-docs, indexes\my-docs, .cache\my-docs, out\my-docs
+
+
+-------------------------------------------------------------------
+PART F. EVALUATE YOUR OWN COLLECTION (optional)
+-------------------------------------------------------------------
+
+1. Draft test questions and claims from your documents
+   cgprr -c my-docs eval generate
+
+2. Read the drafts, then accept or reject them by id
+   cgprr -c my-docs eval review
+   cgprr -c my-docs eval review --accept G001 G002 G003
+   cgprr -c my-docs eval review --reject G005
+
+3. Rebuild (recalibrates the refusal thresholds; needs 20 or more accepted questions)
+   cgprr -c my-docs collection build
+
+4. Run the evaluation
+   cgprr -c my-docs eval all
+
+
+-------------------------------------------------------------------
+PART G. LOCAL WEB SERVER (optional)
+-------------------------------------------------------------------
+
+Terminal 1 (leave it running):
+   cgprr -c cgprr-news serve --port 8765
+
+Terminal 2:
+   Invoke-RestMethod http://127.0.0.1:8765/health
+   Invoke-RestMethod http://127.0.0.1:8765/ask -Method Post -ContentType 'application/json' -Body '{"question":"How many TEU did the Port of Velmora handle?"}'
+
+The server listens on this machine only and has no login. Do not expose it to a network.
+Stop it with Ctrl+C in Terminal 1.
+
+
+-------------------------------------------------------------------
+TROUBLESHOOTING
+-------------------------------------------------------------------
+
+"cgprr is not recognized" ........ run .venv\Scripts\Activate.ps1 (Part B, step 3)
+"reachable": false ............... start the Ollama app, then run: cgprr health
+"model ... not found" ............ ollama pull qwen3:4b-instruct-2507-q4_K_M
+"dense embeddings unavailable" ... the lite profile was not loaded (Part B, step 4)
+"collection 'x' not found" ....... run from the project folder; check: cgprr collection list
+"no_text" ........................ scanned PDF: run OCR on it first, then add the output file
+"type_mismatch" / "executable" ... the file is not what its extension says; re-save as PDF or DOCX
+Answers are slow ................. normal on a 4 GB GPU (about 90 s per answer, about 3 min per fact-check);
+                                   a question you have already asked comes back instantly from the cache

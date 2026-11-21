@@ -1,0 +1,6 @@
+# Shell scripts and env profiles are read by bash (WSL/Linux/Kaggle): they must keep LF endings.
+* text=auto eol=lf
+*.sh text eol=lf
+*.env text eol=lf
+*.pdf binary
+*.docx binary

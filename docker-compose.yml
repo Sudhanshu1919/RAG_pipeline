@@ -1,0 +1,37 @@
+# mkdir -p indexes logs out .cache data      # host folders the app writes to (owned by you)
+# docker compose up -d ollama
+# docker compose exec ollama ollama pull qwen2.5:7b-instruct-q4_K_M
+# docker compose exec ollama ollama pull bge-m3
+# docker compose run --rm app build-index
+# docker compose run --rm app ask "How many tariff lines does the agreement cover?"
+services:
+  ollama:
+    image: ollama/ollama:latest
+    # Bound to localhost only: the model server is not reachable from the network.
+    ports: ["127.0.0.1:11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+    environment:
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_KEEP_ALIVE: "30m"
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  app:
+    build: .
+    depends_on: [ollama]
+    # Run as the host user, so files written to the bind mounts below stay yours (and writable).
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      CGPRR_LLM_URL: http://ollama:11434
+      CGPRR_COLLECTION: cgprr-news
+    volumes:
+      - ./data:/app/data            # your own collections (cgprr collection create ...)
+      - ./indexes:/app/indexes
+      - ./logs:/app/logs
+      - ./out:/app/out
+      - ./.cache:/app/.cache
+
+volumes:
+  ollama: {}

@@ -1,0 +1,8 @@
+# Synthetic CGPRR news desk corpus (fictional countries, people and figures). See DATA_CARD.md.
+name = "cgprr-news"
+description = "CGPRR synthetic source pack (10 docs) and 4 test articles with planted errors"
+sources = ["source_pack/*.md"]
+articles = "articles"
+require_synthetic = true    # loader refuses any file not labelled `synthetic: true`
+chunk_tokens = 350
+chunking = "paragraph"     # keeps the gold passage ids (S01:p2 = 2nd paragraph)
